@@ -36,7 +36,12 @@ public class GameFlowManager : MonoBehaviour
     private bool sceneLoadRequested;
 
     public GameState State => state;
-    public bool CanGameplayMove => state == GameState.Playing;
+
+    public bool CanGameplayMove =>
+        state == GameState.Playing;
+
+    public bool IsPaused =>
+        state == GameState.Paused;
 
     private void Awake()
     {
@@ -65,7 +70,12 @@ public class GameFlowManager : MonoBehaviour
         }
         else
         {
-            Debug.LogWarning("GameFlowManager: CountdownManager não foi atribuído. A partida começará imediatamente.");
+            Debug.LogWarning(
+                "GameFlowManager: CountdownManager não foi atribuído. " +
+                "A partida começará imediatamente.",
+                this
+            );
+
             BeginPlaying();
         }
     }
@@ -76,6 +86,10 @@ public class GameFlowManager : MonoBehaviour
             Instance = null;
     }
 
+    // =========================================================
+    // GAMEPLAY
+    // =========================================================
+
     public void BeginPlaying()
     {
         if (state != GameState.Countdown)
@@ -83,6 +97,34 @@ public class GameFlowManager : MonoBehaviour
 
         state = GameState.Playing;
     }
+
+    // =========================================================
+    // PAUSE
+    // =========================================================
+
+    public bool PauseGame()
+    {
+        if (state != GameState.Playing)
+            return false;
+
+        state = GameState.Paused;
+
+        return true;
+    }
+
+    public bool ResumeGame()
+    {
+        if (state != GameState.Paused)
+            return false;
+
+        state = GameState.Playing;
+
+        return true;
+    }
+
+    // =========================================================
+    // MORTE
+    // =========================================================
 
     public void KillPlayer()
     {
@@ -100,13 +142,18 @@ public class GameFlowManager : MonoBehaviour
             aiMemoryManager.DiscardPendingAttempt();
 
         PlayOneShot(deathClip);
+
         StartCoroutine(DeathRoutine());
     }
 
     private IEnumerator DeathRoutine()
     {
         if (deathCanvasDelay > 0f)
-            yield return new WaitForSecondsRealtime(deathCanvasDelay);
+        {
+            yield return new WaitForSecondsRealtime(
+                deathCanvasDelay
+            );
+        }
 
         if (deathCanvas != null)
             deathCanvas.SetActive(true);
@@ -114,23 +161,41 @@ public class GameFlowManager : MonoBehaviour
         state = GameState.Dead;
     }
 
+    // =========================================================
+    // VITÓRIA
+    // =========================================================
+
     public void PlayerWon()
     {
         if (state != GameState.Playing)
             return;
 
         state = GameState.Victory;
+
         StopActors();
 
-        if (playerPathRecorder != null && playerMovement != null)
+        if (playerPathRecorder != null &&
+            playerMovement != null)
         {
-            // Garante que a célula em direção à saída entre no histórico mesmo
-            // caso o Trigger seja atingido antes do centro exato da célula.
-            playerPathRecorder.RecordCell(playerMovement.CurrentOrTargetCell);
+            /*
+             * Garante que a última célula seja registrada.
+             *
+             * Isso ajuda caso o Trigger da saída seja atingido
+             * antes de o Player chegar exatamente no centro
+             * da célula.
+             */
+            playerPathRecorder.RecordCell(
+                playerMovement.CurrentOrTargetCell
+            );
         }
 
-        if (aiMemoryManager != null && playerPathRecorder != null)
-            aiMemoryManager.StageSuccessfulAttempt(playerPathRecorder.GetCurrentPathCopy());
+        if (aiMemoryManager != null &&
+            playerPathRecorder != null)
+        {
+            aiMemoryManager.StageSuccessfulAttempt(
+                playerPathRecorder.GetCurrentPathCopy()
+            );
+        }
 
         PlayOneShot(victoryClip);
 
@@ -138,40 +203,86 @@ public class GameFlowManager : MonoBehaviour
             victoryCanvas.SetActive(true);
     }
 
-    public void RestartAfterDeath()
+    // =========================================================
+    // PRÓXIMA FASE
+    // =========================================================
+
+    public void StartNextLevel()
+    {
+        if (state != GameState.Victory)
+            return;
+
+        if (sceneLoadRequested)
+            return;
+
+        /*
+         * Somente aqui a vitória é realmente salva.
+         *
+         * - aprende a rota
+         * - aumenta SuccessfulRuns
+         * - aumenta CurrentLevel
+         * - salva JSON
+         */
+        if (aiMemoryManager != null)
+            aiMemoryManager.CommitPendingWin();
+
+        RestartCurrentScene();
+    }
+
+    // =========================================================
+    // REINICIAR CENA
+    // =========================================================
+
+    public void RestartCurrentScene()
     {
         if (sceneLoadRequested)
             return;
 
+        /*
+         * Reiniciar pelo Pause ou após morrer
+         * NÃO deve ensinar nada para a IA.
+         */
         if (aiMemoryManager != null)
             aiMemoryManager.DiscardPendingAttempt();
 
-        LoadSceneAsync(SceneManager.GetActiveScene().buildIndex);
+        int currentSceneIndex =
+            SceneManager.GetActiveScene().buildIndex;
+
+        LoadSceneAsync(currentSceneIndex);
     }
 
-    public void StartNextLevel()
+    /*
+     * Mantido para não quebrar botões antigos
+     * da tela de derrota.
+     */
+    public void RestartAfterDeath()
     {
-        if (state != GameState.Victory || sceneLoadRequested)
-            return;
-
-        if (aiMemoryManager != null)
-            aiMemoryManager.CommitPendingWin();
-
-        LoadSceneAsync(SceneManager.GetActiveScene().buildIndex);
+        RestartCurrentScene();
     }
+
+    // =========================================================
+    // MAIN MENU
+    // =========================================================
 
     public void ReturnToMenu()
     {
         if (sceneLoadRequested)
             return;
 
-        // Voltar ao menu não confirma a rota da vitória.
-        // A memória só é consolidada ao clicar em "Nova Fase".
+        /*
+         * Se o jogador vencer e voltar para o Menu
+         * sem clicar em "Nova Fase",
+         * essa rota não é consolidada.
+         */
         if (aiMemoryManager != null)
             aiMemoryManager.DiscardPendingAttempt();
 
         LoadSceneAsync(mainMenuSceneIndex);
     }
+
+    // =========================================================
+    // MOVIMENTO
+    // =========================================================
 
     private void StopActors()
     {
@@ -182,11 +293,24 @@ public class GameFlowManager : MonoBehaviour
             enemyMovement.StopMovement();
     }
 
+    // =========================================================
+    // ÁUDIO
+    // =========================================================
+
     private void PlayOneShot(AudioClip clip)
     {
-        if (audioSource != null && clip != null)
-            audioSource.PlayOneShot(clip);
+        if (audioSource == null)
+            return;
+
+        if (clip == null)
+            return;
+
+        audioSource.PlayOneShot(clip);
     }
+
+    // =========================================================
+    // CARREGAMENTO
+    // =========================================================
 
     private void LoadSceneAsync(int buildIndex)
     {
@@ -194,7 +318,9 @@ public class GameFlowManager : MonoBehaviour
             return;
 
         sceneLoadRequested = true;
+
         state = GameState.Transition;
+
         SceneManager.LoadSceneAsync(buildIndex);
     }
 }

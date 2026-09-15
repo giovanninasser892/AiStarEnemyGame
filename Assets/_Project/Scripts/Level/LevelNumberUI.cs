@@ -18,7 +18,11 @@ public class LevelNumberUI : MonoBehaviour
     {
         if (levelText == null)
         {
-            Debug.LogWarning("LevelNumberUI: TMP_Text não foi atribuído.", this);
+            Debug.LogWarning(
+                "LevelNumberUI: TMP_Text não foi atribuído.",
+                this
+            );
+
             return;
         }
 

@@ -27,6 +27,12 @@ public class PlayerFacing2D : MonoBehaviour
 
     private void Update()
     {
+        if (GameFlowManager.Instance != null &&
+    GameFlowManager.Instance.State == GameState.Paused)
+        {
+            return;
+        }
+
         if (visualRoot == null)
             return;
 

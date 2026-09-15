@@ -1,45 +1,50 @@
 using System.IO;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
 public class MainMenuManager : MonoBehaviour
 {
-    [Header("Cenas")]
-    [Min(0)]
-    [SerializeField] private int gameplaySceneIndex = 1;
-
-    [Header("Save da IA")]
-    [SerializeField] private string aiSaveFileName = "maze_ai_memory.json";
-
     private bool isLoading;
 
-    public void StartGame()
+    public void StartGame(int sceneIndex)
     {
         if (isLoading)
             return;
 
-        isLoading = true;
-
-        SceneManager.LoadSceneAsync(gameplaySceneIndex);
-    }
-
-    public void DeleteAISave()
-    {
-        string savePath =
-            Path.Combine(
-                Application.persistentDataPath,
-                aiSaveFileName
+        if (sceneIndex < 0 ||
+            sceneIndex >= SceneManager.sceneCountInBuildSettings)
+        {
+            Debug.LogError(
+                $"MainMenuManager: Scene Index inválido: {sceneIndex}",
+                this
             );
 
-        // Caso exista um AIMemoryManager ativo na cena.
-        if (AIMemoryManager.Instance != null)
-        {
-            AIMemoryManager.Instance.ResetMemory();
             return;
         }
 
-        // Caso estejamos somente no Main Menu e não exista
-        // AIMemoryManager carregado.
+        isLoading = true;
+
+        SceneManager.LoadSceneAsync(sceneIndex);
+    }
+
+    public void DeleteAISave(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            Debug.LogWarning(
+                "MainMenuManager: nome do arquivo de save não informado.",
+                this
+            );
+
+            return;
+        }
+
+        string savePath = Path.Combine(
+            Application.persistentDataPath,
+            fileName
+        );
+
         if (File.Exists(savePath))
         {
             File.Delete(savePath);
@@ -51,7 +56,7 @@ public class MainMenuManager : MonoBehaviour
         else
         {
             Debug.Log(
-                $"Nenhum save da IA encontrado em:\n{savePath}"
+                $"Nenhum save encontrado em:\n{savePath}"
             );
         }
     }
@@ -59,10 +64,7 @@ public class MainMenuManager : MonoBehaviour
     public void QuitGame()
     {
 #if UNITY_EDITOR
-        Debug.Log(
-            "QuitGame chamado. " +
-            "Application.Quit não fecha o Unity Editor."
-        );
+        UnityEditor.EditorApplication.isPlaying = false;
 #else
         Application.Quit();
 #endif
